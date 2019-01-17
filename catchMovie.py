@@ -4,7 +4,7 @@ returnXLS = True # write result into a xls document
 returnConfig = True # write mission information into a txt document
 silenceMode = False # whether the program will have output
 isCommandShell = False # command shell mode: catchMovie.py [movie name] or just input
-timeWait = 1 # Time wait for every page catch (short time wait may cause unsucceed catch)
+timeWait = 0.01 # Time wait for every page catch (short time wait may cause unsucceed catch)
 # -------------------------------------------------------
 # user config end
 
@@ -15,10 +15,10 @@ import xlwt
 import os
 import sys
 
-# get the web content three (adapt the the xpath form)
+# get the web content tree (adapt the the xpath form)
 def getUrlTree(page,content):
     page = str(page)
-    url = 'http://ifkdy.com/index.php?p=' + page + '&q=' +  content
+    url = 'http://ifkdy.com/index.php?p=' + page + '&q=' + content
     return etree.HTML(rq.get(url, timeout=5).content)
 
 # write the result
@@ -59,6 +59,7 @@ resource = []
 try:
     os.remove('movie.xls')
     os.remove('movie.txt')
+    os.remove('movieResult.txt')
 except BaseException:
     print()
 
@@ -73,29 +74,35 @@ else:
     movie = data[1]
 
 # Resource Info
-TotalMovie = int(getUrlTree(1000,'2001').xpath('/html/body/div[2]/p/span[1]/text()')[0][4:][:-1])
-NeededPage = int(TotalMovie/PerPageMovie)
+TotalMovie = int(getUrlTree(1,movie).xpath('/html/body/div[2]/p/span[1]/text()')[0][4:][:-1])
+if TotalMovie == 0:
+    NeededPage = 0
+elif TotalMovie <= PerPageMovie:
+    NeededPage = 1
+else:
+    NeededPage = int(TotalMovie/PerPageMovie) + 1
 
-while True:
-    if page == NeededPage:
-        break
-    pageResource = getUrlTree(page,movie) # resource for this page
-    for movieCount in range(PerPageMovie):
-        try:
-            xpAddr = '/html/body/div[2]/div[1]/ul/li[' + str(movieCount) + ']/a/span[1]/text()'
-            xpDesc = '/html/body/div[2]/div[1]/ul/li[' + str(movieCount) + ']/a/span[2]/text()'
-            xpUrl = '/html/body/div[2]/div[1]/ul/li[' + str(movieCount) + ']/a/@href'
-            # analyze the information
-            info = {}
-            info[pageResource.xpath(xpDesc)[0]] = (pageResource.xpath(xpAddr)[0],pageResource.xpath(xpUrl)[0])
-            resource.append(info)
-            total += 1
-            if not silenceMode:
-                print(info)
-        except BaseException:
-            continue
-    time.sleep(timeWait)
-    page += 1 # another page
+try:
+    while page != NeededPage + 1:
+        pageResource = getUrlTree(page,movie) # resource for this page
+        for movieCount in range(PerPageMovie):
+            try:
+                xpAddr = '/html/body/div[2]/div[1]/ul/li[' + str(movieCount) + ']/a/span[1]/text()'
+                xpDesc = '/html/body/div[2]/div[1]/ul/li[' + str(movieCount) + ']/a/span[2]/text()'
+                xpUrl = '/html/body/div[2]/div[1]/ul/li[' + str(movieCount) + ']/a/@href'
+                # analyze the information
+                info = {}
+                info[pageResource.xpath(xpDesc)[0]] = (pageResource.xpath(xpAddr)[0],pageResource.xpath(xpUrl)[0])
+                resource.append(info)
+                total += 1
+                if not silenceMode:
+                    print(info)
+            except BaseException:
+                continue
+        time.sleep(timeWait)
+        page += 1 # another page
+except BaseException:
+    print('Exist Error in process, progress end earlier than normal')
 
 # return mission config
 missionInfo = ('\n'
@@ -108,15 +115,26 @@ missionInfo = ('\n'
 if not silenceMode:
     print(missionInfo)
 
-# rewrite description into list
+# rewrite description into list form
 desc = list(map(lambda x:list(x.keys())[0],resource))
 addr = list(map(lambda x:list(x.values())[0][1],resource))
 res = list(map(lambda x:list(x.values())[0][0],resource))
 
+# Writing System
 try:
-    if returnXLS:
-        write_excel()
     if returnConfig:
         write_Config()
+    if returnXLS:
+        write_excel()
+
+# If writing system runs error, call the backup system
 except BaseException:
-    print('write fail')
+    time.sleep(1)
+    print('write XLS fail')
+    choice = str(input("You can choose to write the result into a txt file instead of write into xls doc,\n"
+                   "input 1 to rewrite it into txt file: "))
+    if choice == "1":
+        f = open('movieResult.txt','w',encoding='utf-8')
+        for i in range(0,len(desc)):
+            content = desc[i] + ' -----------> ' + res[i] + ' -----------> ' + addr[i] + '\n'
+            f.write(content)
